@@ -79,14 +79,49 @@ def gen_all_combinations(segs, size, on_color, off_color, debug=False):
     Then, for every combination of segment on/off, we add the corresponding segments
     to an output image and then return those as an array.
     """
+    
+    # 7 segments, each one can be on or off
+    num_segments = 7 
+    num_combinations = 2**num_segments
 
-    # all 7-segment images will have this as the base
-    template_img = sum(draw_pts(segs[seg]['pts'], size, off_color) for seg in segs)
 
-    if debug:    
-        show_img("Template image (all off)", template_img)
+    width, height = size
+    channels = 3 
+    imgs = np.zeros((num_combinations, height, width, channels), dtype=np.uint8)
+
+    for i in range(num_combinations):
+        for j, seg in enumerate(segs):
+            if (1 << j) & i :
+                imgs[i, :] += draw_pts(segs[seg]['pts'], size, on_color)
+            else:
+                imgs[i, :] += draw_pts(segs[seg]['pts'], size, off_color)
+
+        if debug:    
+            show_img(f"img {i} ({i:07b})", imgs[i, :])
         
-    # TODO: the rest :)
+    return imgs
+
+def gen_grid(imgs, n_rows=8, n_cols=16, debug=False):
+    """Place all images next to each other to create a n_rows, n_cols grid
+    
+    If images cannot all be placed in n_rows, n_cols, the resulting image
+    is either cut-off or it is extended with a blank background to accomodate
+    """
+    num_imgs, height, width, channels = imgs.shape
+    
+    grid = np.zeros((n_rows*height, n_cols*width, channels), dtype=np.uint8)
+    
+    
+    for i in range(n_rows):
+        for j in range(n_cols):
+            if i*n_cols + j > num_imgs-1:
+                continue
+            grid[i*height : i*height + height, j*width : j*width + width] = imgs[i*n_cols + j]
+            
+            if debug:
+                show_img(f"grid ({i}, {j})", grid)
+    
+    return grid
         
 
 def generate(*,
@@ -127,6 +162,14 @@ def generate(*,
     imgs = gen_all_combinations(segs,
                                 (img_width_px, img_height_px),
                                 on_color, off_color, debug)
+    
+    # create larger image from each smaller combination image
+    grid = gen_grid(imgs, debug=debug)
+    
+    cv.imwrite("segs.png", grid)
+    
+    return grid
+    
 
 if __name__ == "__main__":
     
