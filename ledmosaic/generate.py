@@ -2,6 +2,7 @@ import numpy as np
 import cv2 as cv
 import xml.etree.ElementTree as ET
 import argparse
+from .utils import show_img
 
 
 def rasterize_pts(svg_pts, size_px, viewbox):
@@ -21,8 +22,8 @@ def rasterize_pts(svg_pts, size_px, viewbox):
     img_pts = []
     
     for (x, y) in svg_pts:
-        x = (x - minx)*(width_px // width_vb)
-        y = (y - miny)*(height_px // height_vb)
+        x = round((x - minx)*(width_px / width_vb))
+        y = round((y - miny)*(height_px / height_vb))
         img_pts.append((x, y))
         
     return img_pts
@@ -45,8 +46,19 @@ def parse_svg():
             
     return segs, viewbox    
 
-def draw_pts(pts, size, color, separation=2):
-    """Create image and draw pixels based on pts list"""
+def draw_pts(pts, size, color, separation=0):
+    """Create image and draw pixels based on pts list
+    
+    we add pixel separation between segments otherwise segments
+    will be squished together with only a single pixel separation
+    the actual separation width is scaled acording to image size
+    
+    the following formula was derived assuming that 2 pixels is a good
+    thickness for a (320, 192) image and 1 pixel is good for (40, 24)
+    
+    (y2-y1) / (x2-x1) == (2-1) / (320*192 - 40*24) == m == 0.000016534
+    y intercept -> y - mx = b, 1 - 40*24*m == 0.98412736
+    """
     
     width, height = size
     
@@ -58,18 +70,16 @@ def draw_pts(pts, size, color, separation=2):
     pts = pts.reshape((-1, 1, 2))
     cv.fillPoly(image, [pts], color)
     
-    # this adds the separation between segments otherwise segments
-    # will be squished together with only a single pixel separation
+    if separation == None:
+        m = (2-1) / (320*192 - 40*24)
+        b = 1 - 40*24*m
+        separation = int(m*width*height + b)
+        
     cv.polylines(image, [pts], isClosed=True, color=(0, 0, 0), thickness=separation)
 
     return image
 
-def show_img(title, image):
-    """Simple wrapper function around cv.imshow"""
-    
-    cv.imshow(title, image)
-    cv.waitKey(0)
-    cv.destroyAllWindows()
+
 
 
 def gen_all_combinations(segs, size, on_color, off_color, debug=False):
@@ -141,7 +151,10 @@ def generate(*,
     """
     
     seg_pts_svg, viewbox = parse_svg()
-       
+
+    if img_width_px < viewbox[-2] or img_height_px < viewbox[-1]:
+        print("warning - image size < than viewbox. This causes bad output image artifacts")
+
     segs = dict()
     
     # convert SVG points to actual image points
@@ -178,12 +191,12 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--img-width-px",
                         help="7-segment output image cols (width) in pixels",
                         type=int,
-                        default=192)
+                        default=11)
     
     parser.add_argument("-r", "--img-height-px",
                         help="7-segment output image rows (height) in pixels",
                         type=int,
-                        default=320) 
+                        default=20) 
     
     parser.add_argument("-o", "--on-color",
                         help="7-segment output image color when seg is ON (comma separated BGR ordering)",
