@@ -117,7 +117,9 @@ def tile(*,
          cols=16,
          grid_path="segs.png",
          image_path="images/test.jpg",
-         debug=False):
+         save_path="",
+         debug=False,
+         image_data=None):
     """Tile an image with candidate 7-segment display digit images
 
     Target image is first divided into blocks
@@ -130,7 +132,7 @@ def tile(*,
     4) Pick the candidate tile with the closet brightness to a target image tile
     5) Move on to the next tile and repeat process until all tiles are placed
     """
-        
+    
     # candidate tiles as one big grid
     grid = cv.imread(grid_path, flags=cv.IMREAD_UNCHANGED)
     
@@ -138,7 +140,10 @@ def tile(*,
     tiles = split_grid(grid, rows, cols, debug)
     
     # take in the image we are trying to convert
-    image = cv.imread(image_path, flags=cv.IMREAD_UNCHANGED)
+    if image_data is not None:
+        image = image_data
+    else:
+        image = cv.imread(image_path, flags=cv.IMREAD_UNCHANGED)
     
     # determine how many tiles we can fit in original image
     num_tiles_row, num_tiles_col = calc_mosaic_size(image.shape, tiles[0].shape)
@@ -193,7 +198,8 @@ def tile(*,
     if debug:
         show_img(f"Mosaic output {mosaic.shape}", mosaic)
     
-    cv.imwrite("mosaic.png", mosaic)
+    if save_path:
+        cv.imwrite(save_path, mosaic)
     
     return mosaic        
         
@@ -220,6 +226,11 @@ if __name__ == "__main__":
                         help="Source image path",
                         type=str,
                         default="images/test.jpg")
+    
+    parser.add_argument("-s", "--save-path",
+                        help="Output image path (image not saved if empty)",
+                        type=str,
+                        default="") 
     
     parser.add_argument("-d", "--debug",
                         help="Show additional parsing and image output",
