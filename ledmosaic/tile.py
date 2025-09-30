@@ -12,14 +12,18 @@ def split_grid(grid, n_rows=8, n_cols=16, debug=False):
     height = grid.shape[0] // n_rows
     width = grid.shape[1] // n_cols
     channels = grid.shape[2]
-       
-    tiles = np.zeros((n_rows*n_cols, height, width, channels), dtype=np.uint8)
     
-    for i in range(n_rows):
-        for j in range(n_cols):
-            tiles[i*n_cols + j] = grid[i*height : i*height + height, j*width : j*width + width]
-            
-            if debug:
+    # unsplit from n_rows*height, n_cols*width
+    tiles = grid.reshape(n_rows, height, n_cols, width, channels)
+    
+    # reorder so that n_rows/n_cols combine after subsequent reshape
+    tiles = tiles.transpose(0, 2, 1, 3, 4)
+    
+    tiles = tiles.reshape(n_rows*n_cols, height, width, channels)
+    
+    if debug:
+        for i in range(n_rows):
+            for j in range(n_cols):
                 show_img(f"tile {i*n_cols + j}", tiles[i*n_cols + j])
         
     return tiles
@@ -151,31 +155,30 @@ def tile(n_rows=8, n_cols=16,
                (f"cropped {cropped.shape}", cropped)])
     
     
-
     # Figure out brightness of each candidate tile
     # we iteratively average pixels from last dimension to first
-    tiles_avg_brightness = np.average(tiles, axis=(3, 2, 1))
+    tiles_bright = np.average(tiles, axis=(3, 2, 1))
     
     # scale such that the smallest brightness corresponds to tile 0 (all segs off)
     # and the largest brightness corresponds to tile 127 (all segs on)
-    tiles_avg_brightness = scale_brightness(tiles_avg_brightness)
+    tiles_bright = scale_brightness(tiles_bright)
     
-    # Figure out brightness of each image block area
-    image_avg_brightness = np.zeros((num_tiles_row, num_tiles_col), dtype=np.uint8)
-    for i in range(num_tiles_row):
-        for j in range(num_tiles_col):
-            image_avg_brightness[i, j] = np.average(cropped[i*tile_height_px:tile_height_px*(i+1), j*tile_width_px:tile_width_px*(j+1)])
-    show_img("Image average brightness", image_avg_brightness)
+    # same trick that we use in gen_grid/split_grid
+    image_bright = cropped.reshape(num_tiles_row, tile_height_px, num_tiles_col, tile_width_px, n_channels)
+    image_bright = image_bright.transpose(0, 2, 1, 3, 4)
+    image_bright = np.average(image_bright, axis=(4, 3, 2))
+
+    # image_bright is in floats, so we need to scale to range [0-1.0] for displaying
+    show_img("Image average brightness", image_bright / image_bright.max())
     
-    # tiles_avg_brightness.shape == (128, )
-    # image_avg_brightness.shape == (8, 12)
+    # tiles_bright.shape == (128, )
+    # image_bright.shape == (8, 12)
     # we reshape to do a single vector comparaision and use broadcasting 
     # to get which tile has the closet brightness
-    diff = abs(image_avg_brightness.reshape(-1)[:, None] - tiles_avg_brightness)
+    diff = abs(image_bright.reshape(-1)[:, None] - tiles_bright)
     best_tiles = np.argmin(diff, axis=-1)
         
     best_tiles = best_tiles.reshape(num_tiles_row, num_tiles_col)
-    # print(best_tiles)
     
     # (num_tiles_row, num_tiles_col, tile_height, tile_width, channels)
     extracted_tiles = tiles[best_tiles]

@@ -46,7 +46,7 @@ def parse_svg():
             
     return segs, viewbox    
 
-def draw_pts(pts, size, color, separation=0):
+def draw_pts(pts, size, color, separation=None):
     """Create image and draw pixels based on pts list
     
     we add pixel separation between segments otherwise segments
@@ -119,18 +119,22 @@ def gen_grid(imgs, n_rows=8, n_cols=16, debug=False):
     """
     num_imgs, height, width, channels = imgs.shape
     
-    grid = np.zeros((n_rows*height, n_cols*width, channels), dtype=np.uint8)
+    if num_imgs != n_rows*n_cols:
+        # TODO: crop or pad
+        raise Exception("n_rows*n_cols is not exactly equal to number of candidate images")
     
+    # break up images into a grid of n_rows by n_cols
+    grid = imgs.reshape(n_rows, n_cols, height, width, channels)
     
-    for i in range(n_rows):
-        for j in range(n_cols):
-            if i*n_cols + j > num_imgs-1:
-                continue
-            grid[i*height : i*height + height, j*width : j*width + width] = imgs[i*n_cols + j]
-            
-            if debug:
-                show_img(f"grid ({i}, {j})", grid)
+    # transpose so that n_rows/height and n_cols/width combine appropiately
+    grid = grid.transpose(0, 2, 1, 3, 4)
     
+    # collapse rows and cols
+    grid = grid.reshape(n_rows*height, n_cols*width, channels)
+    
+    if debug:
+        show_img(f"grid", grid)
+
     return grid
         
 
@@ -191,12 +195,12 @@ if __name__ == "__main__":
     parser.add_argument("-c", "--img-width-px",
                         help="7-segment output image cols (width) in pixels",
                         type=int,
-                        default=11)
+                        default=192)
     
     parser.add_argument("-r", "--img-height-px",
                         help="7-segment output image rows (height) in pixels",
                         type=int,
-                        default=20) 
+                        default=320) 
     
     parser.add_argument("-o", "--on-color",
                         help="7-segment output image color when seg is ON (comma separated BGR ordering)",
