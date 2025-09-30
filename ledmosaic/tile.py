@@ -1,30 +1,30 @@
 import numpy as np
 import cv2 as cv                
 from .utils import show_img, show_imgs, scale_brightness
+import argparse
 
-def split_grid(grid, n_rows=8, n_cols=16, debug=False):
+def split_grid(grid, rows=8, cols=16, debug=False):
     """Split grid of 7-segments into individual image dimensions
     
     This function is basically the opposite of gen_grid() in generate.py
     """
     
     # FYI, this assumes that each position is perfectly filled in our grid
-    height = grid.shape[0] // n_rows
-    width = grid.shape[1] // n_cols
+    height = grid.shape[0] // rows
+    width = grid.shape[1] // cols
     channels = grid.shape[2]
     
-    # unsplit from n_rows*height, n_cols*width
-    tiles = grid.reshape(n_rows, height, n_cols, width, channels)
+    # unsplit from rows*height, cols*width
+    tiles = grid.reshape(rows, height, cols, width, channels)
     
-    # reorder so that n_rows/n_cols combine after subsequent reshape
+    # reorder so that rows/cols combine after subsequent reshape
     tiles = tiles.transpose(0, 2, 1, 3, 4)
     
-    tiles = tiles.reshape(n_rows*n_cols, height, width, channels)
+    tiles = tiles.reshape(rows*cols, height, width, channels)
     
     if debug:
-        for i in range(n_rows):
-            for j in range(n_cols):
-                show_img(f"tile {i*n_cols + j}", tiles[i*n_cols + j])
+        show_img(f"tiles[0]", tiles[0])
+        show_img(f"tiles[-1]", tiles[-1])
         
     return tiles
 
@@ -112,9 +112,12 @@ def center_crop_img(image, output_shape):
     return cropped
 
 
-def tile(n_rows=8, n_cols=16,
-         grid_img_path="segs.png",
-         test_img_path="images/test/test_img_2_highres.jpg"):
+def tile(*,
+         rows=8,
+         cols=16,
+         grid_path="segs.png",
+         image_path="images/test.jpg",
+         debug=False):
     """Tile an image with candidate 7-segment display digit images
 
     Target image is first divided into blocks
@@ -129,13 +132,13 @@ def tile(n_rows=8, n_cols=16,
     """
         
     # candidate tiles as one big grid
-    grid = cv.imread(grid_img_path, flags=cv.IMREAD_UNCHANGED)
+    grid = cv.imread(grid_path, flags=cv.IMREAD_UNCHANGED)
     
     # invidiual candidate tiles accessed via 1st dimension
-    tiles = split_grid(grid, n_rows, n_cols)
+    tiles = split_grid(grid, rows, cols, debug)
     
     # take in the image we are trying to convert
-    image = cv.imread(test_img_path, flags=cv.IMREAD_UNCHANGED)
+    image = cv.imread(image_path, flags=cv.IMREAD_UNCHANGED)
     
     # determine how many tiles we can fit in original image
     num_tiles_row, num_tiles_col = calc_mosaic_size(image.shape, tiles[0].shape)
@@ -145,14 +148,12 @@ def tile(n_rows=8, n_cols=16,
     tile_height_px = tiles.shape[1]
     tile_width_px = tiles.shape[2]
     
-    mosaic = np.zeros((num_tiles_row*tile_height_px, num_tiles_col*tile_width_px, n_channels), dtype=np.uint8)
+    cropped = center_crop_img(image, output_shape=(num_tiles_row*tile_height_px, num_tiles_col*tile_width_px, n_channels))
     
-    cropped = center_crop_img(image, mosaic.shape)
-    
-    show_imgs([(f"original image {image.shape}", image),
-               (f"tiles[1] {tiles[1].shape}", tiles[1]),
-               (f"mosaic grid {mosaic.shape}", mosaic),
-               (f"cropped {cropped.shape}", cropped)])
+    if debug:
+        show_imgs([(f"original image {image.shape}", image),
+                   (f"tiles[1] {tiles[1].shape}", tiles[1]),
+                   (f"cropped {cropped.shape}", cropped)])
     
     
     # Figure out brightness of each candidate tile
@@ -168,8 +169,9 @@ def tile(n_rows=8, n_cols=16,
     image_bright = image_bright.transpose(0, 2, 1, 3, 4)
     image_bright = np.average(image_bright, axis=(4, 3, 2))
 
-    # image_bright is in floats, so we need to scale to range [0-1.0] for displaying
-    show_img("Image average brightness", image_bright / image_bright.max())
+    if debug:
+        # image_bright is in floats, so we need to scale to range [0-1.0] for displaying
+        show_img(f"Image average brightness per tile {image_bright.shape}", image_bright / image_bright.max())
     
     # tiles_bright.shape == (128, )
     # image_bright.shape == (8, 12)
@@ -181,18 +183,52 @@ def tile(n_rows=8, n_cols=16,
     best_tiles = best_tiles.reshape(num_tiles_row, num_tiles_col)
     
     # (num_tiles_row, num_tiles_col, tile_height, tile_width, channels)
-    extracted_tiles = tiles[best_tiles]
+    mosaic = tiles[best_tiles]
     
     # we transpose so that we can concatenate and stich together the 
     # tiles without writing explicit for loops
-    extracted_tiles = extracted_tiles.transpose(0, 2, 1, 3, 4)
-    extracted_tiles = extracted_tiles.reshape(num_tiles_row*tile_height_px, num_tiles_col*tile_width_px, n_channels)
+    mosaic = mosaic.transpose(0, 2, 1, 3, 4)
+    mosaic = mosaic.reshape(num_tiles_row*tile_height_px, num_tiles_col*tile_width_px, n_channels)
     
-    show_img("Mosaic output", extracted_tiles)
+    if debug:
+        show_img(f"Mosaic output {mosaic.shape}", mosaic)
     
-    return extracted_tiles        
+    cv.imwrite("mosaic.png", mosaic)
+    
+    return mosaic        
         
 if __name__ == "__main__":
-    tile()
+    
+    parser = argparse.ArgumentParser()
+    
+    parser.add_argument("-n", "--rows",
+                        help="Number of rows in tile grid image",
+                        type=int,
+                        default=8)
+    
+    parser.add_argument("-l", "--cols",
+                        help="Number of columns in tile grid image",
+                        type=int,
+                        default=16) 
+    
+    parser.add_argument("-g", "--grid-path",
+                        help="Tile grid image path",
+                        type=str,
+                        default="segs.png")
+    
+    parser.add_argument("-i", "--image-path",
+                        help="Source image path",
+                        type=str,
+                        default="images/test.jpg")
+    
+    parser.add_argument("-d", "--debug",
+                        help="Show additional parsing and image output",
+                        action="store_true",
+                        default=False)    
+        
+    args = parser.parse_args()
+    
+    tile(**vars(args))
+
 
 
